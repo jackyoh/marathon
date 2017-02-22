@@ -509,3 +509,51 @@ def dcos_canonical_version():
 
 def dcos_version_less_than(version):
     return dcos_canonical_version() < LooseVersion(version)
+
+
+def create_docker_credentials_file(file_name='docker.tar.gz'):
+    """ Create a docker credentials file. Docker username and password are passed 
+        as environment variables `DOCKER_HUB_USERNAME` and `DOCKER_HUB_PASSWORD` 
+        by jenkins. Using both a `{file_name}` with `.docker/config.json` is 
+        created containing the credentials.
+
+        :param file_name: credentials file name `docker.tar.gz` by default
+        :type command: str
+    """
+
+    assert 'DOCKER_HUB_USERNAME' in os.environ, "Couldn't find docker hub username. $DOCKER_HUB_USERNAME is not set"
+    assert 'DOCKER_HUB_PASSWORD' in os.environ, "Couldn't find docker hub password. $DOCKER_HUB_PASSWORD is not set"
+
+    username = os.environ['DOCKER_HUB_USERNAME']
+    password = os.environ['DOCKER_HUB_PASSWORD']
+
+    print('Creating a tarball {} with json credentials for dockerhub username {}'.format(file_name, username))
+    CONFIG_JSON = 'config.json'
+
+    import base64
+    auth_hash = base64.b64encode('{}:{}'.format(username, password).encode()).decode()
+
+    config_json = {
+      "auths": {
+        "https://index.docker.io/v1/": {
+          "auth": auth_hash
+        }
+      }
+    }
+
+    # Write config.json to file
+    with open(CONFIG_JSON, 'w') as f:
+        json.dump(config_json, f, indent=4)
+
+    try:
+        # Create a docker.tar.gz
+        import tarfile
+        with tarfile.open(file_name, 'w:gz') as tar:
+            tar.add(CONFIG_JSON, arcname='.docker/config.json')
+            tar.close()
+    except Exception as e:
+        print('Failed to create a docker credentils file {}'.format(e))
+        raise e
+    finally:
+        os.remove(CONFIG_JSON)
+

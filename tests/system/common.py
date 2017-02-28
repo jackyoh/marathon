@@ -330,6 +330,38 @@ def health_check(path='/', port_index=0, failures=1, timeout=2):
         }
 
 
+def external_volume_mesos_app(volume_name=None):
+    if volume_name is None:
+        volume_name = 'marathon-si-test-vol-{}'.format(uuid.uuid4().hex)
+
+    return {
+      "id": "/external-volume-app",
+      "instances": 1,
+      "cpus": 0.1,
+      "mem": 32,
+      "cmd": "/usr/bin/tail -f /dev/null",
+      "container": {
+        "type": "MESOS",
+        "volumes": [
+          {
+            "containerPath": "test-rexray-volume",
+            "external": {
+              "size": 1,
+              "name": volume_name,
+              "provider": "dvdi",
+              "options": { "dvdi/driver": "rexray" }
+              },
+            "mode": "RW"
+          }
+        ]
+      },
+      "upgradeStrategy": {
+        "minimumHealthCapacity": 0,
+        "maximumOverCapacity": 0
+      }
+    }
+
+
 def cluster_info(mom_name='marathon-user'):
     agents = get_private_agents()
     print("agents: {}".format(len(agents)))

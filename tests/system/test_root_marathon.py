@@ -4,6 +4,7 @@
 
 import pytest
 import retrying
+import uuid
 
 from dcos import marathon
 
@@ -178,6 +179,49 @@ def _test_declined_offer(app_id, app_def, reason):
         assert role_summary['processed'] > 0
         assert last_attempt['declined'] > 0
         assert last_attempt['processed'] > 0
+
+
+def test_external_volume():
+    volume_name = "marathon-si-test-vol-{}".format(uuid.uuid4().hex)
+    app_def = external_volume_mesos_app(volume_name)
+    app_id = app_def['id']
+
+    # Tested with root marathon since MoM doesn't have 
+    # --enable_features external_volumes option activated.
+    # First deployment should create the volume since it has a unique name
+    try:
+        client = marathon.create_client()
+        client.add_app(app_def)
+        deployment_wait()
+
+        # Create the app: the volume should be successfully created
+        tasks = client.get_tasks(app_id)
+        assert len(tasks) == 1
+        assert tasks[0]['state'] == 'TASK_RUNNING'
+
+        # Scale down to 0
+        client.stop_app(app_id)
+        deployment_wait() 
+
+        # Scale up again: the volume should be successfully reused
+        client.scale_app(app_id, 1)
+        deployment_wait()
+
+        assert len(tasks) == 1
+        assert tasks[0]['state'] == 'TASK_RUNNING'
+
+        # Remove the app to be able to remove the volume
+        client.remove_app(app_id)
+        deployment_wait()
+    except Exception as e:
+        print('Fail to test external volumes: {}'.format(e))
+        raise e
+    finally:
+        # Clean up after the test: external volumes are not destroyd by marathon or dcos
+        # and have to be cleaned manually. 
+        agent = get_private_agents()[0]
+        result, output = run_command_on_agent(agent, 'sudo /opt/mesosphere/bin/dvdcli remove --volumedriver=rexray --volumename={}'.format(volume_name))
+        assert result, 'Failed to remove external volume with name={}: {}'.format(volume_name, output)
 
 
 def setup_function(function):
